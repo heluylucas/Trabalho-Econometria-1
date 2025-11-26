@@ -1,0 +1,367 @@
+---
+title: "Trabalho Econometria 1"
+author: "Beatriz Barros e Lucas Heluy"
+format: html
+---
+
+### Instalando Pacotes
+
+```{r}
+load.lib <- c(
+  "readxl", "dplyr", "tidyverse", "stargazer", "stringr",
+  "geobr", "writexl", "lmtest", "sandwich", "car",
+  "corrplot", "ggplot2", "scales", "broom", "forcats"
+)
+
+install.lib <- load.lib[!load.lib %in% installed.packages()]
+for(lib in install.lib) install.packages(lib,dependencies=TRUE)
+sapply(load.lib, require, character=TRUE)
+```
+
+### Obtendo a base de dados
+
+```{r}
+df <- as.data.frame(read_excel('./base_trabalho.xlsx'))
+
+head(df)
+```
+
+### Descrição das colunas e obtenção dos dados
+
+-   Variáveis de interesse:
+
+    -   Internações: número de internações por doenças do aparelho respiratório (proxy para qualidade do ar) por munícipio de residência do cidadão. Dados obtidos na plataforma DataSus e oriundos do Sistema de Informações Hospitalares do SUS (SIH/SUS).
+
+    -   Investimento: representa a despesa liquidada em infraestrutura verde em Reais acumulada por munícipio em três anos até o fim do exercício de 2018. Dados obtidos à partir do portal do Sistema de Informações Contábeis e Fiscais do Setor Público Brasileiro (Siconfi) - foram considerados investimentos municipais em infraestrura verde as seguintes despezas:
+
+        -   **Infraestrutura Urbana**: inclui obras de drenagem, pavimentação permeável, requalificação urbana com vegetação, parques lineares, etc.
+
+        -   **Serviços Urbanos** → pode incluir arborização urbana, limpeza pública, manejo de resíduos sólidos e manutenção de áreas verdes.
+
+        -   **Preservação e Conservação Ambiental** → despesas com reflorestamento, recuperação de áreas degradadas, criação de parques e unidades de conservação, gestão de recursos naturais, etc.
+
+        -   **Extensão Rural** → relevante para incluir **infraestrutura verde em áreas periurbanas** (como práticas agroecológicas, manejo sustentável de solos e recursos hídricos).
+
+        -   **Desporto Comunitário** e **Lazer** → inclui investimentos em parques, ciclovias e praças verdes
+
+-   Demais variáveis:
+
+    -   Automóveis: Representa a frota total de veículos por munícipio no ano de 2018 - Dados obtidos
+
+    -   PIB: Representa o valor do Produto Interno Bruto municipal (PIB) em milhares de Reais em 2018 - Dados obtidos à partir do portal IPEADATA e oriundos do Instituto Brasileiro de Geografia e Estatística (IBGE)
+
+    -   Indústria: Representa o valor do Produto Interno Bruto (PIB) oriundo da atividade industrial municipal em milhares de Reais em 2018 - Dados obtidos à partir do portal IPEADATA e oriundos do Instituto Brasileiro de Geografia e Estatística (IBGE)
+
+    -   Área: Representa a área total do município em Km² - Dados obtidos à partir do portal IPEADATA e oriundos do Instituto Brasileiro de Geografia e Estatística (IBGE)
+
+    -   AU: Representa a área urbana total do município em Km² - Dados obtidos à partir do portal IPEADATA e oriundos do Instituto Brasileiro de Geografia e Estatística (IBGE)
+
+    -   População: Representa a população total do município em 2018. Dados obtidos à partir do portal do Sistema de Informações Contábeis e Fiscais do Setor Público Brasileiro (Siconfi), em conjunto com as informações sobre despezas municipais em infraestrutura verde
+
+```{r}
+stargazer(df, type= 'text')
+```
+
+### Cálculo das variáveis de controle
+
+1.  PIB_pc → PIB per capita por munícipio no ano de 2018
+2.  PIB_industria → percentual do PIB oriundo da atividade industrial no ano de 2018
+3.  Investimento_pc → Investimento em infraestrutura verde per capita por munícipio no ano de 2018
+4.  Automoveis_pc → Frota de veículos per capita por munícipio no ano de 2018
+5.  Densidade → Densidade populacional por município no ano de 2018
+6.  Proporcao_Au → percentual da área municipal representada pela área urbana
+
+```{r}
+df$PIB_pc <- (df$PIB * 1000) / df$População
+
+df$PIB_industria <- df$Industria / df$PIB
+
+df$Investimento_pc <- df$Investimento / df$População
+
+df$Automoveis_pc <- df$Automoveis / df$População
+
+df$Densidade <- df$População / df$Area
+
+df$Proporcao_Au <- df$AU / df$Area
+
+head(df)
+```
+
+```{r}
+stargazer(df, type= 'text')
+```
+
+### Removendo municípios com dados ausentes
+
+```{r}
+df <- df |> drop_na()
+```
+
+### Transformação logarítimica
+
+```{r}
+df$Internações_log <- log(df$Internações + 1)
+df$Investimento_pc_log <- log(df$Investimento_pc + 1)
+df$PIB_pc_log <- log(df$PIB_pc + 1)
+df$Automoveis_pc_log <- log(df$Automoveis_pc + 1)
+df$Densidade_log <- log(df$Densidade + 1)
+
+head(df)
+```
+
+```{r}
+stargazer(df, type= 'text')
+```
+
+### Gráfico com a distribuição de investimentos pelo país
+
+ggplot(mapa_investimento) +
+
+geom_sf(aes(fill = valor), color = NA) +
+
+scale_fill_viridis_c(option = "turbo", na.value = "grey90") +
+
+theme_minimal() +
+
+labs(fill = "Valor")
+
+```{r}
+mun <- read_municipality(code_muni = "all", year = 2018)
+
+dados_investimento <- data.frame(
+  code_muni = df$code_muni,
+  valor = df$Investimento_pc_log
+)
+
+mapa_investimento <- mun %>%
+  left_join(dados_investimento, by = "code_muni")
+
+ggplot(mapa_investimento) +
+  geom_sf(aes(fill = valor), color = NA) +
+  scale_fill_gradientn(
+    colours = c("#deebf7", "#6baed6", "#003366"),
+    na.value = "grey90"
+  ) +
+  theme_minimal() +
+  labs(fill = "Valor")
+
+ggsave("mapa_investimento.png", width = 7, height = 7, dpi = 700)
+```
+
+### Modelo simples:
+
+```{r}
+modelo_1 <- lm(Internações ~ Investimento_pc, data=df)
+bptest(modelo_1)
+```
+
+```{r}
+resultado_1 <- summary(modelo_1)
+resultado_1
+```
+
+### Modelo simples log-log
+
+```{r}
+modelo_2 <- lm(Internações_log ~ Investimento_pc_log, data=df)
+bptest(modelo_2)
+```
+
+```{r}
+resultado_2 <- summary(modelo_2)
+resultado_2
+```
+
+### Modelos log-log com váriaveis de controle
+
+1.  PIB per capita municipal: Municípios mais ricos podem investir mais e ter diferentes padrões de poluição. (PIB_pc)
+2.  Densidade populacional: Áreas mais densas tendem a ter mais veículos e atividades que geram poluição. (Densidade)
+3.  Frota de veículos per capita: Um indicador direto de uma fonte importante de poluição. (Automoveis)
+4.  Proporção da área urbana: A extensão da área urbanizada do município. (Proporcao_Au)
+5.  Atividade industrial: Proporção do PIB vinda da indústria (especialmente indústrias poluentes). (PIB_Indutria)
+6.  Dummies de região: Para capturar diferenças regionais não observadas. (as_factor(Regiao))
+
+```{r}
+modelo_3 <- lm(Internações_log ~ Investimento_pc_log + PIB_pc_log, data=df)
+
+bptest(modelo_3)
+```
+
+```{r}
+resultado_3 <- coeftest(modelo_3, vcov = vcovHC(modelo_3, type = "HC1"))
+
+resultado_3
+```
+
+```{r}
+modelo_4 <- lm(Internações_log ~ Investimento_pc_log + PIB_pc_log +
+                 Densidade_log, data=df)
+
+bptest(modelo_4)
+```
+
+```{r}
+resultado_4 <- coeftest(modelo_4, vcov = vcovHC(modelo_4, type = "HC1"))
+
+resultado_4
+```
+
+```{r}
+modelo_5 <- lm(Internações_log ~ Investimento_pc_log + PIB_pc_log +
+                 Densidade_log + Automoveis_pc_log, data=df)
+
+bptest(modelo_5)
+```
+
+```{r}
+resultado_5 <- coeftest(modelo_5, vcov = vcovHC(modelo_5, type = "HC1"))
+
+resultado_5
+```
+
+```{r}
+modelo_6 <- lm(Internações_log ~ Investimento_pc_log + PIB_pc_log +
+                 Densidade_log + Automoveis_pc_log + Proporcao_Au, data=df)
+
+bptest(modelo_6)
+```
+
+```{r}
+resultado_6 <- coeftest(modelo_6, vcov = vcovHC(modelo_6, type = "HC1"))
+
+resultado_6
+```
+
+```{r}
+modelo_7 <- lm(Internações_log ~ Investimento_pc_log + PIB_pc_log +
+                 Densidade_log + Automoveis_pc_log + Proporcao_Au + PIB_industria, data=df)
+
+bptest(modelo_7)
+```
+
+```{r}
+resultado_7 <- coeftest(modelo_7, vcov = vcovHC(modelo_7, type = "HC1"))
+
+resultado_7
+```
+
+```{r}
+modelo_8 <- lm(Internações_log ~ Investimento_pc_log + PIB_pc_log +
+                 Densidade_log + Automoveis_pc_log + Proporcao_Au +
+                 PIB_industria + as.factor(Regiao), data=df)
+
+bptest(modelo_8)
+```
+
+```{r}
+resultado_8 <- coeftest(modelo_8, vcov = vcovHC(modelo_8, type = "HC1"))
+
+resultado_8
+```
+
+```{r}
+se_1 <- resultado_1$coefficients[, "Std. Error"]
+p_1 <- resultado_1$coefficients[, "Pr(>|t|)"]
+
+se_2 <- resultado_2$coefficients[, "Std. Error"]
+p_2 <- resultado_2$coefficients[, "Pr(>|t|)"]
+
+se_3 <- resultado_3[, "Std. Error"]
+p_3 <- resultado_3[, "Pr(>|t|)"]
+
+se_4 <- resultado_4[, "Std. Error"]
+p_4 <- resultado_4[, "Pr(>|t|)"]
+
+se_5 <- resultado_5[, "Std. Error"]
+p_5 <- resultado_5[, "Pr(>|t|)"]
+
+se_6 <- resultado_6[, "Std. Error"]
+p_6 <- resultado_6[, "Pr(>|t|)"]
+
+se_7 <- resultado_7[, "Std. Error"]
+p_7 <- resultado_7[, "Pr(>|t|)"]
+
+se_8 <- resultado_8[, "Std. Error"]
+p_8 <- resultado_8[, "Pr(>|t|)"]
+```
+
+```{r}
+modelos <- mget(c("modelo_1" ,"modelo_2","modelo_3","modelo_4","modelo_5","modelo_6","modelo_7","modelo_8"))
+
+se_robustos <- list(se_1, se_2, se_3, se_4, se_5, se_6, se_7, se_8)
+
+p_robustos <- list(p_1, p_2, p_3, p_4, p_5, p_6, p_7, p_8)
+
+stargazer(modelos,
+          se = se_robustos, 
+          p = p_robustos,
+          type = "text",
+          title = "Resultados da Regressão com Erros Padrão Robustos",
+          notes = "Erros padrão robustos à heterocedasticidade (tipo HC1) entre parênteses.")
+```
+
+### Gráfico com intervalos de confiança com erros robustos do modelo
+
+```{r}
+# Erros-robustos do seu modelo final
+robust <- coeftest(modelo_8, vcov = vcovHC(modelo_8, type="HC1"))
+
+# Transformar em dataframe organizado
+df_plot <- data.frame(
+  term = rownames(robust),
+  estimate = robust[,1],
+  se = robust[,2]
+) %>%
+  filter(term != "(Intercept)") %>%   # remove intercepto
+  mutate(
+    conf.low = estimate - 1.96*se,
+    conf.high = estimate + 1.96*se,
+    term = fct_reorder(term, estimate)   # ordena por magnitude
+  )
+
+# Paleta discreta elegante
+col_point <- "#1B4F72"   # azul escuro
+col_line  <- "#154360"   # azul aço
+
+ggplot(df_plot, aes(x = estimate, y = term)) +
+  geom_point(size = 2, color = col_point) +
+  geom_errorbarh(
+    aes(xmin = conf.low, xmax = conf.high),
+    height = 0.15, color = col_line, linewidth = 0.8
+  ) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+  theme_minimal(base_size = 13) +
+  labs(
+    x = "Estimativa (com erros-padrão robustos HC1)",
+    y = NULL
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 12),
+    axis.text.y = element_text(size = 11),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+
+ggsave("confint.png", width = 12, height = 7, dpi = 700)
+```
+
+### Matriz de correlação entre as variáveis do modelo
+
+```{r}
+vars_cor <- df %>%
+  dplyr::select(Investimento_pc_log, PIB_pc_log, Densidade_log,
+                Automoveis_pc_log, Proporcao_Au, PIB_industria,
+                Internações_log)
+
+mat_cor <- cor(vars_cor, use = "pairwise.complete.obs")
+
+matriz_cor_arredondada <- round(mat_cor, 2)
+
+stargazer(matriz_cor_arredondada, 
+          type = "text",
+          title = "Matriz de Correlação", 
+          align = TRUE, 
+          no.space = TRUE,
+          summary = FALSE) 
+```
